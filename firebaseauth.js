@@ -368,13 +368,21 @@ export async function getUsersFromFirestore() {
     });
     return users;
 }
-
 export async function deleteItemFromFirestore(itemId) {
     const db = getFirestore();
-    const itemRef = doc(db, "lostFoundItems", itemId);
-    await deleteDoc(itemRef);
+    const itemsRef = collection(db, "lostFoundItems");
+    const q = query(itemsRef);
+    const querySnapshot = await getDocs(q);
+    
+    for (const doc of querySnapshot.docs) {
+        if (doc.data().id === itemId) {
+            await deleteDoc(doc.ref);
+            console.log('✅ Item deleted from Firestore:', itemId);
+            return; // Stop after finding and deleting
+        }
+    }
+    throw new Error('Item not found');
 }
-
 export async function markAsReturnedInFirestore(itemId, userEnrollment) {
     const db = getFirestore();
     const itemRef = doc(db, "lostFoundItems", itemId);

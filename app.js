@@ -309,58 +309,27 @@ function previewImage(input, previewId) {
     const placeholder = document.getElementById(input.id.replace('Image', 'ImagePlaceholder'));
     
     if (file) {
+        // Simple size check
+        if (file.size > 2 * 1024 * 1024) { // 2MB max
+            alert('Image too large! Please use smaller images.');
+            input.value = '';
+            return;
+        }
+        
         const reader = new FileReader();
-        reader.onload = function(event) {
-            const img = new Image();
-            img.src = event.target.result;
+        reader.onload = function(e) {
+            const img = preview.querySelector('img');
+            img.src = e.target.result;
+            preview.classList.remove('hidden');
+            placeholder.classList.add('hidden');
             
-            img.onload = function() {
-                // Create canvas for compression
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                
-                // Set maximum dimensions (800x600 max)
-                let width = img.width;
-                let height = img.height;
-                const MAX_WIDTH = 800;
-                const MAX_HEIGHT = 600;
-                
-                // Calculate new dimensions while maintaining aspect ratio
-                if (width > height) {
-                    if (width > MAX_WIDTH) {
-                        height = Math.round((height * MAX_WIDTH) / width);
-                        width = MAX_WIDTH;
-                    }
-                } else {
-                    if (height > MAX_HEIGHT) {
-                        width = Math.round((width * MAX_HEIGHT) / height);
-                        height = MAX_HEIGHT;
-                    }
-                }
-                
-                // Set canvas dimensions
-                canvas.width = width;
-                canvas.height = height;
-                
-                // Draw and compress image
-                ctx.drawImage(img, 0, 0, width, height);
-                
-                // Convert to compressed base64 (70% quality)
-                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-                
-                // Show preview
-                const previewImg = preview.querySelector('img');
-                previewImg.src = compressedBase64;
-                preview.classList.remove('hidden');
-                placeholder.classList.add('hidden');
-                
-                // Store compressed image (now it's small KB size)
-                input._base64Data = compressedBase64;
-                
-                console.log('Original size:', (file.size / 1024).toFixed(2), 'KB');
-                console.log('Compressed size:', (compressedBase64.length / 1024).toFixed(2), 'KB');
-            };
-        };
+            // Store for submission
+            input._base64Data = e.target.result;
+        }
+        reader.onerror = function() {
+            alert('Error loading image. Please try a different image.');
+            input.value = '';
+        }
         reader.readAsDataURL(file);
     }
 }
@@ -389,9 +358,18 @@ async function submitFoundItem(event) {
     const itemId = Date.now().toString();
     let imageBase64 = null;
 
-    // Store image as base64 for immediate display
-    if (imageInput._base64Data) {
-        imageBase64 = imageInput._base64Data;
+    // SAFE IMAGE HANDLING - Skip if error
+    try {
+        if (imageInput._base64Data) {
+            // Check if base64 is valid and not too large
+            if (imageInput._base64Data.length < 1000000) { // Less than 1MB
+                imageBase64 = imageInput._base64Data;
+            } else {
+                console.log('Image too large, skipping...');
+            }
+        }
+    } catch (error) {
+        console.log('Image error, saving without image...');
     }
 
     const item = {
@@ -406,18 +384,17 @@ async function submitFoundItem(event) {
         reporter: currentUser.name,
         reporterId: currentUser.enrollmentId,
         reporterEmail: currentUser.email || localStorage.getItem('currentUserEmail'),
-        imageBase64: imageBase64, // This will be visible to everyone
+        imageBase64: imageBase64, // Will be null if error
         timestamp: new Date().toISOString(),
         userId: localStorage.getItem('loggedInUserId'),
-        status: 'active',
-        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+        status: 'active'
     };
 
     try {
         const { saveItemToFirestore } = await import("./firebaseauth.js");
         await saveItemToFirestore(item);
-        showSuccessModal('Found item reported successfully! Visible to all users.');
-        updateStatistics(); // Refresh stats
+        showSuccessModal('✅ Item reported successfully!');
+        updateStatistics();
     } catch (error) {
         console.error('Error saving to Firestore:', error);
         showSuccessModal('Error saving item. Please try again.');
@@ -428,10 +405,11 @@ async function submitFoundItem(event) {
 }
 
 async function submitLostItem(event) {
+   
     event.preventDefault();
     
     const formData = new FormData(event.target);
-    const imageInput = document.getElementById('lostItemImage');
+    const imageInput = document.getElementById('foundItemImage');
     
     if (!currentUser) {
         showSuccessModal('Please log in again.');
@@ -441,49 +419,60 @@ async function submitLostItem(event) {
     const itemId = Date.now().toString();
     let imageBase64 = null;
 
-    // Store image as base64 for immediate display
-    if (imageInput._base64Data) {
-        imageBase64 = imageInput._base64Data;
+    // SAFE IMAGE HANDLING - Skip if error
+    try {
+        if (imageInput._base64Data) {
+            // Check if base64 is valid and not too large
+            if (imageInput._base64Data.length < 1000000) { // Less than 1MB
+                imageBase64 = imageInput._base64Data;
+            } else {
+                console.log('Image too large, skipping...');
+            }
+        }
+    } catch (error) {
+        console.log('Image error, saving without image...');
     }
 
     const item = {
         id: itemId,
-        type: 'lost',
+        type: 'found',
         category: formData.get('category'),
         name: formData.get('itemName'),
         description: formData.get('description'),
         location: formData.get('location'),
-        date: formData.get('dateLost'),
+        date: formData.get('dateFound'),
         contact: formData.get('contactInfo'),
         reporter: currentUser.name,
         reporterId: currentUser.enrollmentId,
         reporterEmail: currentUser.email || localStorage.getItem('currentUserEmail'),
-        imageBase64: imageBase64, // This will be visible to everyone
+        imageBase64: imageBase64, // Will be null if error
         timestamp: new Date().toISOString(),
         userId: localStorage.getItem('loggedInUserId'),
-        status: 'active',
-        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+        status: 'active'
     };
 
     try {
         const { saveItemToFirestore } = await import("./firebaseauth.js");
         await saveItemToFirestore(item);
-        showSuccessModal('Lost item reported successfully! Visible to all users.');
-        updateStatistics(); // Refresh stats
+        showSuccessModal('✅ Item reported successfully!');
+        updateStatistics();
     } catch (error) {
         console.error('Error saving to Firestore:', error);
         showSuccessModal('Error saving item. Please try again.');
     }
     
     event.target.reset();
-    removeImage('lostItemImage', 'lostImagePreview');
+    removeImage('foundItemImage', 'foundImagePreview');
 }
 
 async function searchItems() {
     const query = document.getElementById('searchQuery')?.value.toLowerCase() || '';
     const category = document.getElementById('searchCategory')?.value || '';
     const type = document.getElementById('searchType')?.value || '';
-
+    const resultsContainer = document.getElementById('searchResults');
+    if (resultsContainer) {
+        resultsContainer.innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl text-gray-400"></i><p class="text-gray-600 mt-2">Loading...</p></div>';
+    }
     try {
         const { getAllItemsFromFirestore } = await import("./firebaseauth.js");
         let allItems = await getAllItemsFromFirestore();
@@ -540,13 +529,13 @@ function displaySearchResults(items, query = '') {
             
             <div class="mb-4">
                 ${item.imageBase64 ? 
-                    `<img src="${item.imageBase64}" alt="${item.name}" 
-                          class="w-full h-48 object-cover rounded-lg mb-2 cursor-pointer"
-                          onclick="openImageModal('${item.imageBase64}')">` :
-                    `<div class="w-full h-48 bg-gray-200 rounded-lg flex items-center justify-center mb-2">
-                        <i class="fas fa-image text-4xl text-gray-400"></i>
-                    </div>`
-                }
+    `<img src="${item.imageBase64}" alt="${item.name}" 
+          class="w-full h-48 object-cover rounded-lg mb-2 cursor-pointer"
+          onclick="openImageModal('${item.imageBase64}')">` :
+    `<div class="w-full h-48 bg-gray-200 rounded-lg flex items-center justify-center mb-2">
+        <i class="fas fa-image text-4xl text-gray-400"></i>
+    </div>`
+}
             </div>
             
             <h3 class="text-lg font-bold text-gray-800 mb-2">${highlightText(item.name, query)}</h3>
@@ -604,25 +593,25 @@ async function loadUserItems() {
                         </span>
                         <div class="flex space-x-2">
                             <button onclick="markAsReturned('${item.id}')" 
-                                    class="text-green-600 hover:text-green-800 transition-colors" title="Mark as Returned">
-                                <i class="fas fa-check-circle"></i>
-                            </button>
-                            <button onclick="deleteItem('${item.id}')" 
-                                    class="text-red-600 hover:text-red-800 transition-colors" title="Delete">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
+                        class="text-green-600 hover:text-green-800 transition-colors" title="Mark as Returned">
+                    <i class="fas fa-check-circle"></i>
+                </button>
+                            <button onclick="archiveItem('${item.id}')" 
+                        class="text-red-600 hover:text-red-800 transition-colors" title="Archive Item">
+                    <i class="fas fa-trash"></i>
+                </button>
+                </div>
                     </div>
                     
                     <div class="mb-3">
                         ${item.imageBase64 ? 
-                            `<img src="${item.imageBase64}" alt="${item.name}" 
-                                  class="w-full h-32 object-cover rounded-lg cursor-pointer"
-                                  onclick="openImageModal('${item.imageBase64}')">` :
-                            `<div class="w-full h-32 bg-gray-200 rounded-lg flex items-center justify-center">
-                                <i class="fas fa-image text-2xl text-gray-400"></i>
-                            </div>`
-                        }
+    `<img src="${item.imageBase64}" alt="${item.name}" 
+          class="w-full h-48 object-cover rounded-lg mb-2 cursor-pointer"
+          onclick="openImageModal('${item.imageBase64}')">` :
+    `<div class="w-full h-48 bg-gray-200 rounded-lg flex items-center justify-center mb-2">
+        <i class="fas fa-image text-4xl text-gray-400"></i>
+    </div>`
+}
                     </div>
                     
                     <h4 class="font-semibold text-gray-800">${item.name}</h4>
@@ -657,29 +646,27 @@ async function markAsReturned(itemId) {
         }
     }
 }
-
-async function deleteItem(itemId) {
-    if (confirm('Are you sure you want to delete this item?')) {
+async function archiveItem(itemId) {
+    if (confirm('Are you confirm you want to "DELEYTE" this item? This action cannot be undone.')) {
         try {
-            const { deleteItemFromFirestore, getAllItemsFromFirestore } = await import("./firebaseauth.js");
+            const { markAsReturnedInFirestore } = await import("./firebaseauth.js");
             
-            // Delete from Firestore
-            await deleteItemFromFirestore(itemId);
+            // Mark as returned instead of deleting
+            await markAsReturnedInFirestore(itemId, currentUser.enrollmentId);
             
-            // Force refresh all data
-            await loadUserItems(); // Refresh profile page
-            await searchItems();   // Refresh search page  
-            await updateStatistics(); // Refresh home page
+            // Refresh UI
+            await loadUserItems();
+            await searchItems();
+            await updateStatistics();
             
-            showSuccessModal('Item deleted successfully!');
+            showSuccessModal('✅ Item deleted successfully!');
             
         } catch (error) {
-            console.error('Error deleting item:', error);
-            showSuccessModal('Error deleting item. Please refresh page.');
+            console.error('Error:', error);
+            showSuccessModal('❌ Error updating item.');
         }
     }
 }
-
 function openImageModal(imageData) {
     const modal = document.createElement('div');
     modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50';
@@ -736,6 +723,26 @@ function logout() {
     localStorage.removeItem('currentUserEmail');
     window.location.href = 'index.html';
 }
+function init() {
+    const today = new Date().toISOString().split('T')[0];
+    const dateInputs = document.querySelectorAll('input[type="date"]');
+    dateInputs.forEach(input => input.value = today);
+    
+    // CLEAR CACHE on every page load
+    if (currentUser) {
+        document.getElementById('enrollment-page').classList.add('hidden');
+        document.getElementById('navbar').classList.remove('hidden');
+        showPage('home');
+        updateProfile();
+        updateStatistics();
+        
+        // FORCE refresh all data
+        setTimeout(() => {
+            loadUserItems();
+            searchItems();
+        }, 1000);
+    }
+}
 
 document.addEventListener('click', function(event) {
     const profileMenu = document.getElementById('profileMenu');
@@ -748,5 +755,5 @@ document.addEventListener('click', function(event) {
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded, initializing app...');
-    init();
+    init(); // This calls the one, correct init() function
 });
